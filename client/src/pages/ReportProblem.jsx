@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useLang } from '../context/LanguageContext.jsx'
 import { useNetwork } from '../context/NetworkContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { api } from '../lib/api.js'
 import { CATEGORIES, getCategory, categoryStyle } from '../data/categories.js'
 import { JHARKHAND_DISTRICTS, DISTRICT_NAMES, SAMPLE_LOCATIONS } from '../data/districts.js'
@@ -237,6 +238,7 @@ export default function ReportProblem() {
   const { t, lang } = useLang()
   const { online } = useNetwork()
   const { toast } = useToast()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const speech = useSpeech(lang)
@@ -248,7 +250,7 @@ export default function ReportProblem() {
   const [description, setDescription] = useState('')
   const [title, setTitle] = useState('')
   const [anonymous, setAnonymous] = useState(true)
-  const [name, setName] = useState('')
+  const [name, setName] = useState(user?.name || '')
   const [phone, setPhone] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [checking, setChecking] = useState(false)
@@ -258,6 +260,13 @@ export default function ReportProblem() {
   const cameraRef = useRef(null)
   const galleryRef = useRef(null)
 
+  // Auto-fill name when user logs in
+  useEffect(() => {
+    if (user?.name && !name) {
+      setName(user.name)
+    }
+  }, [user])
+
   // Live AI classification from the description text.
   const ai = useMemo(() => classifyText(`${title} ${description}`), [title, description])
 
@@ -266,6 +275,42 @@ export default function ReportProblem() {
     if (!title && description) setTitle(suggestTitle(description))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [description])
+
+  // Citizen Login Gate: Only logged in users can report a problem
+  if (!user) {
+    return (
+      <div className="container-app max-w-lg py-12">
+        <div className="card animate-pop-in p-8 text-center">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <span className="text-4xl">🔐</span>
+          </div>
+          <h2 className="mt-4 text-2xl font-extrabold text-ink-900">{t('report.loginRequiredTitle')}</h2>
+          <p className="mt-2 text-sm text-ink-500">{t('report.loginRequiredSub')}</p>
+
+          <div className="mt-6 space-y-3 rounded-2xl bg-brand-50 p-4 text-left text-xs font-medium text-brand-800">
+            <div className="flex items-center gap-2">
+              <span>📍</span> <span>{t('report.featureTrack')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span>🔔</span> <span>{t('report.featureUpdates')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span>🙌</span> <span>{t('report.featureCommunity')}</span>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-col gap-3">
+            <Link to="/login?redirect=/report&role=citizen" className="btn-primary btn-xl w-full">
+              👤 {t('report.goToLogin')}
+            </Link>
+            <Link to="/" className="btn-ghost btn-lg">
+              ← {t('common.back')} {t('nav.home')}
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const steps = [
     { key: 'category', title: t('report.stepCategory'), sub: t('report.stepCategorySub') },
@@ -341,7 +386,13 @@ export default function ReportProblem() {
       photos,
       location,
       ai,
-      reporter: anonymous ? { anonymous: true } : { anonymous: false, name, phone },
+      reporter: {
+        anonymous,
+        name: anonymous ? '' : (name || user?.name || ''),
+        phone: anonymous ? '' : phone,
+        userEmail: user?.email || '',
+        userId: user?.email || user?.token || '',
+      },
     }
     const res = await api.createReport(payload, { online, allowDuplicate })
     setSubmitting(false)

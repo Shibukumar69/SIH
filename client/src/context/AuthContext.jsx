@@ -6,6 +6,7 @@ const STORAGE_KEY = 'ss:auth'
 
 // Demo institutional accounts. In production these come from the backend.
 export const DEMO_ACCOUNTS = {
+  citizen: { name: 'Rahul Sharma', org: 'Citizen (Ranchi)' },
   government: { name: 'Dept. of Higher & Technical Education', org: 'Government of Jharkhand' },
   university: { name: 'BIT Mesra', org: 'Innovation & Incubation Centre' },
   industry: { name: 'Tata Steel Foundation', org: 'CSR & Innovation' },
@@ -44,13 +45,39 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  const register = useCallback(async (userData) => {
+    const persist = (session) => {
+      setUser(session)
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(session)) } catch { /* ignore */ }
+      return session
+    }
+    try {
+      return persist(await api.register(userData))
+    } catch (err) {
+      if (api.isServerAvailable() && err?.status === 400) {
+        throw err
+      }
+      // Offline / fallback session
+      const session = {
+        role: userData.role || 'citizen',
+        name: userData.name,
+        email: userData.email,
+        phone: userData.phone || '',
+        org: userData.org || (userData.role === 'citizen' ? 'Citizen' : ''),
+        token: `user-${Date.now()}`,
+        demo: false,
+      }
+      return persist(session)
+    }
+  }, [])
+
   const logout = useCallback(() => {
     setUser(null)
     try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )

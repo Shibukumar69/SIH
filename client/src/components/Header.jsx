@@ -19,7 +19,7 @@ export default function Header() {
     { to: '/challenges', label: t('nav.challenges') },
   ]
 
-  const dashboardHome = user ? `/${user.role}` : '/login'
+  const dashboardHome = user ? (user.role === 'citizen' ? '/report' : `/${user.role}`) : '/login'
 
   return (
     <header className="sticky top-0 z-30 border-b border-ink-100 bg-white/85 backdrop-blur-md">

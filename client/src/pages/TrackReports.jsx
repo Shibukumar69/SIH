@@ -1,24 +1,43 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLang } from '../context/LanguageContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { api } from '../lib/api.js'
 import { usePolling } from '../lib/usePolling.js'
 import ReportCard from '../components/ReportCard.jsx'
 
 export default function TrackReports() {
   const { t } = useLang()
+  const { user } = useAuth()
   const [reports, setReports] = useState(null)
 
-  // Refresh each tracked report from the server (falling back to local), so
-  // status changes by officials appear live — without wiping unsynced reports.
+  // Refresh user's own tracked reports from the server / local storage
   async function refresh() {
-    const mine = await api.getMyReports()
+    if (!user) return
+    const mine = await api.getMyReports(user)
     const fresh = await Promise.all(mine.map((r) => api.getReport(r.id).then((x) => x || r)))
     setReports(fresh)
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => { refresh() }, [user])
   usePolling(refresh, 8000)
+
+  if (!user) {
+    return (
+      <div className="container-app max-w-lg py-12">
+        <div className="card animate-pop-in p-8 text-center">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <span className="text-4xl">🔐</span>
+          </div>
+          <h2 className="mt-4 text-2xl font-extrabold text-ink-900">{t('track.loginRequiredTitle') || 'साइन इन आवश्यक है'}</h2>
+          <p className="mt-2 text-sm text-ink-500">{t('track.loginRequiredSub') || 'अपनी दर्ज समस्याओं की स्थिति देखने के लिए अपने खाते से साइन इन करें।'}</p>
+          <Link to="/login?redirect=/track&role=citizen" className="btn-primary btn-xl mt-6 w-full">
+            👤 {t('report.goToLogin') || 'साइन इन करें'}
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="container-app max-w-3xl py-6">

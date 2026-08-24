@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useLang } from '../context/LanguageContext.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { api } from '../lib/api.js'
 import { usePolling } from '../lib/usePolling.js'
@@ -14,6 +15,7 @@ export default function ReportDetail() {
   const { id } = useParams()
   const { t, lang } = useLang()
   const { toast } = useToast()
+  const { user } = useAuth()
   const [report, setReport] = useState(null)
   const [notFound, setNotFound] = useState(false)
   const [feedbackGiven, setFeedbackGiven] = useState(false)
@@ -35,12 +37,39 @@ export default function ReportDetail() {
     toast(t('status.reopened'), { icon: '🔄' })
   }
 
+  // Check if citizen owns this report strictly
+  const userEmail = user?.email ? String(user.email).trim().toLowerCase() : ''
+  const reporterEmail = report?.reporter?.userEmail ? String(report.reporter.userEmail).trim().toLowerCase() : ''
+  const reporterUserId = report?.reporter?.userId ? String(report.reporter.userId).trim().toLowerCase() : ''
+
+  const isOwner = !user || user.role !== 'citizen' || (report && (
+    (userEmail && reporterEmail === userEmail) ||
+    (userEmail && reporterUserId === userEmail)
+  ))
+
   if (notFound) {
     return (
       <div className="container-app max-w-2xl py-16 text-center">
         <span className="text-5xl">🔍</span>
         <p className="mt-4 text-ink-500">{lang === 'hi' ? 'यह समस्या नहीं मिली।' : 'This report was not found.'}</p>
         <Link to="/track" className="btn-primary btn-lg mt-4">← {t('track.title')}</Link>
+      </div>
+    )
+  }
+
+  if (report && user && user.role === 'citizen' && !isOwner) {
+    return (
+      <div className="container-app max-w-lg py-12 text-center">
+        <div className="card animate-pop-in p-8 text-center">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+            <span className="text-4xl">🔒</span>
+          </div>
+          <h2 className="mt-4 text-2xl font-extrabold text-ink-900">{t('track.restrictedTitle') || 'यह आपकी रिपोर्ट नहीं है'}</h2>
+          <p className="mt-2 text-sm text-ink-500">{t('track.restrictedSub') || 'नागरिक केवल अपने द्वारा दर्ज की गई समस्याएँ ही देख और ट्रैक कर सकते हैं।'}</p>
+          <Link to="/track" className="btn-primary btn-lg mt-6">
+            ← {t('track.title')}
+          </Link>
+        </div>
       </div>
     )
   }

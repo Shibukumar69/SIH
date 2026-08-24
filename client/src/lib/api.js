@@ -27,7 +27,7 @@ function authHeader() {
   try {
     const raw = localStorage.getItem('ss:auth')
     const token = raw ? JSON.parse(raw)?.token : null
-    if (token && !String(token).startsWith('demo-')) return { Authorization: `Bearer ${token}` }
+    if (token) return { Authorization: `Bearer ${token}` }
   } catch { /* ignore */ }
   return {}
 }
@@ -78,16 +78,19 @@ function setLocalReports(reports) {
 function getVotes() {
   return load(KEYS.votes, {})
 }
-function getMyIds() {
-  return load(KEYS.myids, [])
+function getMyIds(userEmail) {
+  const key = userEmail ? `myids_${userEmail}` : KEYS.myids
+  return load(key, [])
 }
-function addMyId(id) {
-  const ids = getMyIds()
-  if (!ids.includes(id)) save(KEYS.myids, [id, ...ids])
+function addMyId(id, userEmail) {
+  const key = userEmail ? `myids_${userEmail}` : KEYS.myids
+  const ids = getMyIds(userEmail)
+  if (!ids.includes(id)) save(key, [id, ...ids])
 }
-function removeMyId(id) {
-  const ids = getMyIds()
-  if (ids.includes(id)) save(KEYS.myids, ids.filter((x) => x !== id))
+function removeMyId(id, userEmail) {
+  const key = userEmail ? `myids_${userEmail}` : KEYS.myids
+  const ids = getMyIds(userEmail)
+  if (ids.includes(id)) save(key, ids.filter((x) => x !== id))
 }
 // Insert or update a report in the local store by id, keeping this device's vote flag.
 function upsertLocal(reports, report) {
@@ -200,17 +203,20 @@ export const api = {
 
     const reports = getLocalReports()
     const canReach = online && (await probeServer())
+    const reporterEmail = input.reporter?.userEmail || input.reporter?.userId
     if (canReach) {
       try {
         const data = await request('/reports', { method: 'POST', body: JSON.stringify({ ...report, allowDuplicate }) })
         // Server folded this into an existing challenge — reflect + track that one.
         if (data.merged && data.into) {
           setLocalReports(upsertLocal(reports, data.into))
+          addMyId(data.into.id, reporterEmail)
           addMyId(data.into.id)
           return { merged: true, report: data.into, into: data.into, offline: false }
         }
         const finalReport = { ...report, ...(data.report || {}) }
         setLocalReports([finalReport, ...reports.filter((r) => r.id !== finalReport.id)])
+        addMyId(finalReport.id, reporterEmail)
         addMyId(finalReport.id)
         return { merged: false, report: finalReport, offline: false }
       } catch { /* fall to outbox */ }
@@ -219,6 +225,7 @@ export const api = {
     // Offline (or server unreachable): keep locally + queue for later sync.
     const pendingReport = { ...report, pending: true }
     setLocalReports([pendingReport, ...reports])
+    addMyId(id, reporterEmail)
     addMyId(id)
     setOutbox([{ ...pendingReport, allowDuplicate }, ...getOutbox()])
     return { merged: false, report: pendingReport, offline: true }
@@ -313,12 +320,47 @@ export const api = {
     return getOutbox().length
   },
 
-  async getMyReports() {
-    const ids = getMyIds()
-    const reports = getLocalReports()
-    return ids
-      .map((id) => reports.find((r) => r.id === id))
-      .filter((r) => r && r.status !== 'merged')
+  async getMyReports(user) {
+    if (!user || !user.email) return []
+    const userEmail = String(user.email).trim().toLowerCase()
+    const userToken = user.token
+    const ids = getMyIds(userEmail)
+
+    let serverMine = null
+    if (await probeServer()) {
+      try {
+        const data = await request(`/reports${toQueryString({ mine: 'true' })}`)
+        if (Array.isArray(data)) {
+          serverMine = data.filter((r) => {
+            if (r.status === 'merged') return false
+            if (r.reporter?.userEmail && String(r.reporter.userEmail).toLowerCase() !== userEmail) {
+              return false
+            }
+            return true
+          })
+        }
+      } catch { /* fall through */ }
+    }
+
+    const localReports = getLocalReports()
+    const localMine = localReports.filter((r) => {
+      if (r.status === 'merged') return false
+      if (r.reporter?.userEmail) {
+        return String(r.reporter.userEmail).toLowerCase() === userEmail
+      }
+      if (r.reporter?.userId) {
+        return String(r.reporter.userId).toLowerCase() === userEmail
+      }
+      return ids.includes(r.id)
+    })
+
+    if (serverMine !== null) {
+      const serverIds = new Set(serverMine.map((r) => r.id))
+      const unsyncedLocal = localMine.filter((r) => !serverIds.has(r.id))
+      return [...serverMine, ...unsyncedLocal]
+    }
+
+    return localMine
   },
 
   async stats() {
@@ -336,6 +378,13 @@ export const api = {
   async login(role, credentials) {
     if (await probeServer()) {
       return request('/auth/login', { method: 'POST', body: JSON.stringify({ role, ...credentials }) })
+    }
+    throw new Error('offline')
+  },
+
+  async register(userData) {
+    if (await probeServer()) {
+      return request('/auth/register', { method: 'POST', body: JSON.stringify(userData) })
     }
     throw new Error('offline')
   },

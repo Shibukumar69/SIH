@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
 import { User } from '../models/User.js'
 import { dbReady } from '../db.js'
 import { jwtSecret } from '../middleware/auth.js'
@@ -35,6 +36,30 @@ export const DEMO_ACCOUNTS = {
 const memoryUsers = []
 
 /**
+ * Seed demo accounts into MongoDB if they don't exist yet
+ */
+export async function seedDemoUsers() {
+  if (!dbReady()) return
+  try {
+    for (const [role, demo] of Object.entries(DEMO_ACCOUNTS)) {
+      const existing = await User.findOne({ email: demo.email.toLowerCase() })
+      if (!existing) {
+        await User.create({
+          role,
+          name: demo.name,
+          email: demo.email.toLowerCase(),
+          password: demo.password, // pre-save hook in User model will hash this
+          org: demo.org,
+        })
+        console.log(`✓ Seeded demo user: ${demo.email}`)
+      }
+    }
+  } catch (err) {
+    console.warn('⚠  Demo users seed warning:', err.message)
+  }
+}
+
+/**
  * Register a new user (Citizen, Government, University, Industry)
  * POST /api/auth/register
  */
@@ -44,6 +69,10 @@ export async function registerUser(req, res) {
     
     if (!email || !password || !name) {
       return res.status(400).json({ error: 'missing_fields', message: 'Name, email and password are required' })
+    }
+
+    if (String(password).length < 4) {
+      return res.status(400).json({ error: 'weak_password', message: 'Password must be at least 4 characters long' })
     }
 
     const cleanEmail = String(email).trim().toLowerCase()
@@ -58,7 +87,7 @@ export async function registerUser(req, res) {
         role,
         name: String(name).trim(),
         email: cleanEmail,
-        password: String(password),
+        password: String(password), // hashed automatically by UserSchema pre-save hook
         phone: String(phone).trim(),
         org: String(org).trim() || (role === 'citizen' ? 'Citizen' : ''),
       })
@@ -70,17 +99,18 @@ export async function registerUser(req, res) {
       return res.json({ role: user.role, name: user.name, email: user.email, phone: user.phone, org: user.org, token, demo: false })
     }
 
-    // 2. Memory store fallback
+    // 2. Memory store fallback when DB is offline
     const existingMem = memoryUsers.find((u) => u.email === cleanEmail)
     if (existingMem) {
       return res.status(400).json({ error: 'email_exists', message: 'Email is already registered' })
     }
 
+    const hashedPassword = await bcrypt.hash(String(password), 10)
     const newUser = {
       role,
       name: String(name).trim(),
       email: cleanEmail,
-      password: String(password),
+      password: hashedPassword,
       phone: String(phone).trim(),
       org: String(org).trim() || (role === 'citizen' ? 'Citizen' : ''),
     }
@@ -105,55 +135,56 @@ export async function registerUser(req, res) {
 export async function loginUser(req, res) {
   try {
     const { role, email, password } = req.body || {}
-    const cleanEmail = email ? String(email).trim().toLowerCase() : ''
-    const userRole = role || 'citizen'
-
-    // 1. Check demo accounts first
-    const account = DEMO_ACCOUNTS[userRole]
-    if (account && cleanEmail === account.email && password === account.password) {
-      const token = jwt.sign(
-        { role: userRole, name: account.name, email: account.email, org: account.org },
-        jwtSecret(),
-        { expiresIn: process.env.JWT_EXPIRE || '30d' }
-      )
-      return res.json({ role: userRole, email: account.email, name: account.name, org: account.org, token, demo: true })
+    if (!email || !password) {
+      return res.status(400).json({ error: 'missing_credentials', message: 'Email and password are required' })
     }
 
-    // 2. Check registered DB users
+    const cleanEmail = String(email).trim().toLowerCase()
+    const inputPassword = String(password)
+    const userRole = role || 'citizen'
+
+    // 1. Check registered DB users
     if (dbReady()) {
       const user = await User.findOne({ email: cleanEmail })
-      if (user && user.password === String(password)) {
-        const token = jwt.sign(
-          { id: user._id, role: user.role, name: user.name, email: user.email, org: user.org },
-          jwtSecret(),
-          { expiresIn: process.env.JWT_EXPIRE || '30d' }
-        )
-        return res.json({ role: user.role, email: user.email, name: user.name, phone: user.phone, org: user.org, token, demo: false })
+      if (user) {
+        const isMatch = await user.comparePassword(inputPassword)
+        if (isMatch) {
+          const token = jwt.sign(
+            { id: user._id, role: user.role, name: user.name, email: user.email, org: user.org },
+            jwtSecret(),
+            { expiresIn: process.env.JWT_EXPIRE || '30d' }
+          )
+          return res.json({ role: user.role, email: user.email, name: user.name, phone: user.phone || '', org: user.org || '', token, demo: false })
+        }
       }
     }
 
-    // 3. Check memory registered users
-    const memUser = memoryUsers.find((u) => u.email === cleanEmail && u.password === String(password))
+    // 2. Check demo accounts fallback (for instant demo login if not yet seeded or offline)
+    const demoAccount = DEMO_ACCOUNTS[userRole] || Object.values(DEMO_ACCOUNTS).find((acc) => acc.email === cleanEmail)
+    if (demoAccount && cleanEmail === demoAccount.email.toLowerCase() && inputPassword === demoAccount.password) {
+      const token = jwt.sign(
+        { role: userRole, name: demoAccount.name, email: demoAccount.email, org: demoAccount.org },
+        jwtSecret(),
+        { expiresIn: process.env.JWT_EXPIRE || '30d' }
+      )
+      return res.json({ role: userRole, email: demoAccount.email, name: demoAccount.name, org: demoAccount.org, token, demo: true })
+    }
+
+    // 3. Check memory registered users (if DB is offline)
+    const memUser = memoryUsers.find((u) => u.email === cleanEmail)
     if (memUser) {
-      const token = jwt.sign(
-        { role: memUser.role, name: memUser.name, email: memUser.email, org: memUser.org },
-        jwtSecret(),
-        { expiresIn: '30d' }
-      )
-      return res.json({ role: memUser.role, email: memUser.email, name: memUser.name, phone: memUser.phone, org: memUser.org, token, demo: false })
+      const isMatch = await bcrypt.compare(inputPassword, memUser.password)
+      if (isMatch) {
+        const token = jwt.sign(
+          { role: memUser.role, name: memUser.name, email: memUser.email, org: memUser.org },
+          jwtSecret(),
+          { expiresIn: '30d' }
+        )
+        return res.json({ role: memUser.role, email: memUser.email, name: memUser.name, phone: memUser.phone, org: memUser.org, token, demo: false })
+      }
     }
 
-    // 4. Custom credentials fallback
-    if (cleanEmail && password) {
-      const defaultName = cleanEmail.split('@')[0]
-      const token = jwt.sign(
-        { role: userRole, name: defaultName, email: cleanEmail },
-        jwtSecret(),
-        { expiresIn: '30d' }
-      )
-      return res.json({ role: userRole, email: cleanEmail, name: defaultName, token, demo: false })
-    }
-
+    // INVALID CREDENTIALS - Reject any other attempt!
     return res.status(401).json({ error: 'invalid_credentials', message: 'Invalid email or password' })
   } catch (err) {
     console.error('Login error:', err)
@@ -168,5 +199,6 @@ export async function loginUser(req, res) {
 export function getCurrentUser(req, res) {
   const user = req.user
   if (!user) return res.status(401).json({ error: 'unauthorized' })
-  return res.json({ role: user.role, email: user.email, name: user.name, org: user.org, demo: false })
+  return res.json({ id: user.id, role: user.role, email: user.email, name: user.name, org: user.org, demo: false })
 }
+

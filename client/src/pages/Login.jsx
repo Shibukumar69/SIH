@@ -78,7 +78,13 @@ export default function Login() {
         navigate(`/${role}`)
       }
     } catch (err) {
-      setError(err?.message || (err?.code === 'invalid_credentials' ? t('auth.invalidCreds') : t('auth.loginFailed')))
+      if (err?.code === 'invalid_credentials') {
+        setError(t('auth.invalidCreds') || 'गलत ईमेल या पासवर्ड (Invalid email or password)')
+      } else if (err?.code === 'email_exists') {
+        setError('यह ईमेल पहले से पंजीकृत है (Email is already registered)')
+      } else {
+        setError(err?.message || t('auth.loginFailed') || 'लॉगिन विफल (Login failed)')
+      }
     } finally {
       setBusy(false)
     }

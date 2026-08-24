@@ -17,11 +17,8 @@ export function readToken(req) {
   try {
     return jwt.verify(tokenStr, secret())
   } catch {
-    try {
-      const decoded = jwt.decode(tokenStr)
-      if (decoded && decoded.email) return decoded
-    } catch { /* ignore */ }
-    if (tokenStr.startsWith('demo-') || tokenStr.startsWith('user-')) {
+    // Only accept demo tokens if explicitly prefixed as demo fallback
+    if (tokenStr.startsWith('demo-')) {
       const role = tokenStr.split('-')[1] || 'citizen'
       return { role, email: `${role}@jharkhand.gov.in`, name: role }
     }

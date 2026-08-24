@@ -35,11 +35,22 @@ function authHeader() {
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}/api${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...authHeader(), ...(options.headers || {}) },
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      ...authHeader(),
+      ...(options.headers || {})
+    },
   })
   if (!res.ok) {
-    const err = new Error(`API ${res.status}`)
+    let json = null
+    try { json = await res.json() } catch {}
+    const err = new Error(json?.message || `API ${res.status}`)
     err.status = res.status
+    err.code = json?.error || 'api_error'
+    err.data = json
     throw err
   }
   return res.json()
@@ -54,7 +65,11 @@ async function probeServer() {
   try {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 1500)
-    const res = await fetch(`${API_BASE}/api/health`, { signal: controller.signal })
+    const res = await fetch(`${API_BASE}/api/health`, {
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' }
+    })
     clearTimeout(timer)
     serverAvailable = res.ok
   } catch {
@@ -65,12 +80,7 @@ async function probeServer() {
 
 // ── Local store helpers ──────────────────────────────────────────────────────
 function getLocalReports() {
-  let reports = load(KEYS.reports, null)
-  if (!reports) {
-    reports = buildSeedReports(Date.now())
-    save(KEYS.reports, reports)
-  }
-  return reports
+  return load(KEYS.reports, [])
 }
 function setLocalReports(reports) {
   save(KEYS.reports, reports)
@@ -125,12 +135,18 @@ export const api = {
   isServerAvailable: () => serverAvailable === true,
 
   async listReports(query = {}) {
-    getLocalReports() // ensure seeded
     if (await probeServer()) {
       try {
         const data = await request(`/reports${toQueryString(query)}`)
-        if (Array.isArray(data) && data.length) setLocalReports(mergeLocalVotes(data))
-        return applyQuery(load(KEYS.reports, []), query)
+        if (Array.isArray(data)) {
+          const merged = mergeLocalVotes(data)
+          const localReports = getLocalReports()
+          const serverIds = new Set(data.map((r) => r.id))
+          const localOnly = localReports.filter((r) => !serverIds.has(r.id))
+          const combined = [...merged, ...localOnly]
+          setLocalReports(combined)
+          return applyQuery(combined, query)
+        }
       } catch { /* fall through to local */ }
     }
     return applyQuery(getLocalReports(), query)
@@ -234,9 +250,15 @@ export const api = {
   // Citizen reopens a challenge they don't consider resolved (public, no login).
   async reopenReport(id, note) {
     const now = new Date().toISOString()
+    let updatedReport = null
+    if (await probeServer()) {
+      try {
+        updatedReport = await request(`/reports/${id}/reopen`, { method: 'POST', body: JSON.stringify({ note }) })
+      } catch { /* fall through to local */ }
+    }
     const reports = getLocalReports().map((r) => {
       if (r.id !== id) return r
-      return {
+      return updatedReport || {
         ...r,
         status: 'reopened',
         priority: 'high',
@@ -245,10 +267,7 @@ export const api = {
       }
     })
     setLocalReports(reports)
-    if (await probeServer()) {
-      request(`/reports/${id}/reopen`, { method: 'POST', body: JSON.stringify({ note }) }).catch(() => {})
-    }
-    return reports.find((r) => r.id === id)
+    return updatedReport || reports.find((r) => r.id === id)
   },
 
   async voteReport(id) {
@@ -257,33 +276,48 @@ export const api = {
     votes[id] = true
     save(KEYS.votes, votes)
 
+    if (await probeServer()) {
+      try {
+        const res = await request(`/reports/${id}/vote`, { method: 'POST' })
+        if (res && typeof res.votes === 'number') {
+          const reports = getLocalReports().map((r) =>
+            r.id === id ? { ...r, votes: res.votes, votedByMe: true } : r,
+          )
+          setLocalReports(reports)
+          return { alreadyVoted: false, votes: res.votes }
+        }
+      } catch { /* fall through */ }
+    }
+
     const reports = getLocalReports().map((r) =>
       r.id === id ? { ...r, votes: (r.votes || 0) + 1, votedByMe: true } : r,
     )
     setLocalReports(reports)
-
-    if (await probeServer()) {
-      request(`/reports/${id}/vote`, { method: 'POST' }).catch(() => {})
-    }
     return { alreadyVoted: false }
   },
 
   // Used by government / university / industry dashboards.
   async updateReport(id, patch) {
     const now = new Date().toISOString()
+    let updatedReport = null
+    if (await probeServer()) {
+      try {
+        updatedReport = await request(`/reports/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+      } catch { /* fall through */ }
+    }
     const reports = getLocalReports().map((r) => {
       if (r.id !== id) return r
-      const next = { ...r, ...patch, updatedAt: now }
-      if (patch.status && patch.status !== r.status) {
-        next.timeline = [...(r.timeline || []), { status: patch.status, at: now, note: patch.note || '' }]
+      return updatedReport || {
+        ...r,
+        ...patch,
+        updatedAt: now,
+        timeline: patch.status && patch.status !== r.status
+          ? [...(r.timeline || []), { status: patch.status, at: now, note: patch.note || '' }]
+          : r.timeline
       }
-      return next
     })
     setLocalReports(reports)
-    if (await probeServer()) {
-      request(`/reports/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).catch(() => {})
-    }
-    return reports.find((r) => r.id === id)
+    return updatedReport || reports.find((r) => r.id === id)
   },
 
   async syncOutbox() {
@@ -323,13 +357,12 @@ export const api = {
   async getMyReports(user) {
     if (!user || !user.email) return []
     const userEmail = String(user.email).trim().toLowerCase()
-    const userToken = user.token
-    const ids = getMyIds(userEmail)
+    const ids = [...getMyIds(userEmail), ...getMyIds()]
 
     let serverMine = null
     if (await probeServer()) {
       try {
-        const data = await request(`/reports${toQueryString({ mine: 'true' })}`)
+        const data = await request(`/reports${toQueryString({ mine: 'true', userEmail })}`)
         if (Array.isArray(data)) {
           serverMine = data.filter((r) => {
             if (r.status === 'merged') return false
@@ -345,19 +378,22 @@ export const api = {
     const localReports = getLocalReports()
     const localMine = localReports.filter((r) => {
       if (r.status === 'merged') return false
-      if (r.reporter?.userEmail) {
-        return String(r.reporter.userEmail).toLowerCase() === userEmail
+      if (r.reporter?.userEmail && String(r.reporter.userEmail).toLowerCase() === userEmail) {
+        return true
       }
-      if (r.reporter?.userId) {
-        return String(r.reporter.userId).toLowerCase() === userEmail
+      if (r.reporter?.userId && String(r.reporter.userId).toLowerCase() === userEmail) {
+        return true
       }
       return ids.includes(r.id)
     })
 
     if (serverMine !== null) {
-      const serverIds = new Set(serverMine.map((r) => r.id))
-      const unsyncedLocal = localMine.filter((r) => !serverIds.has(r.id))
-      return [...serverMine, ...unsyncedLocal]
+      const map = new Map()
+      serverMine.forEach((r) => map.set(r.id, r))
+      localMine.forEach((r) => {
+        if (!map.has(r.id)) map.set(r.id, r)
+      })
+      return Array.from(map.values())
     }
 
     return localMine

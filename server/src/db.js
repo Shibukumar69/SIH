@@ -1,6 +1,7 @@
 import mongoose from 'mongoose'
 import { Report } from './models/Report.js'
 import { buildSeedReports } from './lib/seedData.js'
+import { seedDemoUsers } from './controllers/authController.js'
 
 // Connect to MongoDB. Never throws — returns true on success, false otherwise,
 // so the API can still boot and report db:false via /api/health.
@@ -24,6 +25,7 @@ export async function connectDB(uri) {
 
 // Populate demo data on first run so every dashboard looks alive.
 export async function seedIfEmpty() {
+  await seedDemoUsers()
   const count = await Report.estimatedDocumentCount()
   if (count > 0) return { seeded: 0 }
   const docs = buildSeedReports(Date.now())
@@ -35,3 +37,4 @@ export async function seedIfEmpty() {
 export function dbReady() {
   return mongoose.connection.readyState === 1
 }
+

@@ -32,14 +32,11 @@ export function AuthProvider({ children }) {
       // Real backend session (signed JWT).
       return persist(await api.login(role, credentials))
     } catch (err) {
-      // Server reachable but rejected the credentials → surface a real error,
-      // never a silent demo bypass.
-      if (api.isServerAvailable() && err?.status === 401) {
-        const e = new Error('invalid_credentials')
-        e.code = 'invalid_credentials'
-        throw e
+      // If server responded with an error (401, 400, 403, 500, etc.), surface the error!
+      if (err?.status || api.isServerAvailable()) {
+        throw err
       }
-      // Truly offline → local demo session so the app stays demoable.
+      // Truly offline (network fetch failed completely) -> local demo fallback
       const base = DEMO_ACCOUNTS[role] || { name: role, org: '' }
       return persist({ role, ...base, token: `demo-${role}`, demo: true })
     }
@@ -54,7 +51,7 @@ export function AuthProvider({ children }) {
     try {
       return persist(await api.register(userData))
     } catch (err) {
-      if (api.isServerAvailable() && err?.status === 400) {
+      if (err?.status || api.isServerAvailable()) {
         throw err
       }
       // Offline / fallback session
@@ -73,7 +70,15 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     setUser(null)
-    try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
+    try {
+      localStorage.removeItem(STORAGE_KEY)
+      localStorage.removeItem('reports')
+      localStorage.removeItem('outbox')
+      localStorage.removeItem('votes')
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('myids')) localStorage.removeItem(key)
+      })
+    } catch { /* ignore */ }
   }, [])
 
   return (

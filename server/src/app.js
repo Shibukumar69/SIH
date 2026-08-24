@@ -13,6 +13,15 @@ app.use(cors({ origin: origins.length ? origins : true }))
 // Photos arrive as compressed base64 data URLs — allow a generous body size.
 app.use(express.json({ limit: '15mb' }))
 
+// Disable HTTP caching for all API endpoints so browser always fetches live data from MongoDB.
+app.use('/api', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+  res.setHeader('Pragma', 'no-cache')
+  res.setHeader('Expires', '0')
+  res.setHeader('Surrogate-Control', 'no-store')
+  next()
+})
+
 // Health — the client probes this to decide server vs. local-first mode.
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, db: dbReady(), service: 'samadhansetu-api', time: new Date().toISOString() })

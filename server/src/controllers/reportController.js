@@ -43,19 +43,23 @@ export async function listReports(req, res) {
   try {
     const query = req.query || {}
     let filter = {}
-    if (query.mine === 'true') {
-      if (req.user && req.user.email) {
-        const userEmail = String(req.user.email).trim().toLowerCase()
+    if (query.mine === 'true' || query.userEmail) {
+      const emailToMatch = (req.user && req.user.email) || query.userEmail || ''
+      if (emailToMatch) {
+        const cleanEmail = String(emailToMatch).trim().toLowerCase()
+        const emailRegex = new RegExp('^' + cleanEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&') + '$', 'i')
         filter['$or'] = [
-          { 'reporter.userEmail': userEmail },
-          { 'reporter.userId': userEmail },
-          { 'reporter.userId': req.user.id },
+          { 'reporter.userEmail': emailRegex },
+          { 'reporter.userId': emailRegex },
         ]
+        if (req.user && req.user.id) {
+          filter['$or'].push({ 'reporter.userId': req.user.id })
+        }
       } else {
         return res.json([])
       }
     }
-    const all = await Report.find(filter).lean()
+    const all = await Report.find(filter).sort({ createdAt: -1 }).lean()
     res.json(applyQuery(all, query))
   } catch (err) {
     res.status(500).json({ error: 'server_error', message: err.message })
@@ -148,7 +152,7 @@ export async function createReport(req, res) {
           updatedAt: now,
           timeline: [{ status: 'merged', at: now, note: `Merged into ${target.id}` }],
         }
-        await Report.findOneAndUpdate({ id: body.id }, { $setOnInsert: tombstone }, { upsert: true })
+        await Report.create(tombstone)
         return res.json({ merged: true, report: tombstone, into: into.toJSON() })
       }
     }
@@ -160,8 +164,8 @@ export async function createReport(req, res) {
       ...body,
       reporter: {
         ...(body.reporter || {}),
-        userEmail: reporterEmail || body.reporter?.userEmail || '',
-        userId: reporterId || body.reporter?.userId || '',
+        userEmail: reporterEmail ? String(reporterEmail).trim().toLowerCase() : '',
+        userId: reporterId ? String(reporterId).trim() : '',
       },
       pending: false,
       mergedInto: null,
@@ -169,7 +173,7 @@ export async function createReport(req, res) {
       updatedAt: now,
       timeline: body.timeline?.length ? body.timeline : [{ status: 'submitted', at: now, note: 'Report received from citizen' }],
     }
-    const saved = await Report.findOneAndUpdate({ id: body.id }, { $setOnInsert: doc }, { new: true, upsert: true })
+    const saved = await Report.create(doc)
     res.status(201).json({ merged: false, report: saved.toJSON() })
   } catch (err) {
     res.status(500).json({ error: 'server_error', message: err.message })

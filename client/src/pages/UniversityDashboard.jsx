@@ -4,8 +4,10 @@ import { useLang } from '../context/LanguageContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { api } from '../lib/api.js'
+import { usePolling } from '../lib/usePolling.js'
 import { getCategory } from '../data/categories.js'
 import StatCard from '../components/StatCard.jsx'
+import LiveChip from '../components/LiveChip.jsx'
 import { CategoryIcon } from '../components/CategoryBadge.jsx'
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx'
 import { statusProgress } from '../lib/status.js'
@@ -60,6 +62,7 @@ export default function UniversityDashboard() {
   const orgName = user?.name || 'BIT Mesra'
   function refresh() { api.listReports({ sort: 'top' }).then(setReports) }
   useEffect(() => { refresh() }, [])
+  usePolling(refresh, 7000) // live: government routes new challenges in
 
   const recommended = useMemo(() => {
     return reports
@@ -98,6 +101,7 @@ export default function UniversityDashboard() {
       </div>
 
       <div className="container-app py-6">
+        <div className="mb-3 flex justify-end"><LiveChip /></div>
         <div className="grid grid-cols-3 gap-3">
           <StatCard icon="🎯" accent="violet" value={recommended.length} label={t('university.recommendedTitle')} onClick={() => setTab('recommended')} />
           <StatCard icon="🚀" accent="indigo" value={myProjects.length} label={t('university.activeProjects')} onClick={() => setTab('projects')} />

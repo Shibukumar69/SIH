@@ -8,6 +8,7 @@ import { CATEGORIES, getCategory, categoryStyle } from '../data/categories.js'
 import { JHARKHAND_DISTRICTS, DISTRICT_NAMES, SAMPLE_LOCATIONS } from '../data/districts.js'
 import { classifyText, suggestTitle } from '../lib/classify.js'
 import { compressImage } from '../lib/image.js'
+import { extractPhotoLocation } from '../lib/exif.js'
 import { getCurrentPosition, reverseGeocode } from '../lib/geo.js'
 import { CategoryIcon, CategoryPill } from '../components/CategoryBadge.jsx'
 
@@ -219,9 +220,11 @@ function LocationPicker({ location, setLocation }) {
           </div>
         )}
 
-        {location?.district && mode !== 'map' && (
+        {(location?.district || location?.lat) && mode !== 'map' && (
           <div className="mt-3 flex items-center gap-2 rounded-2xl bg-brand-50 p-3 text-sm font-semibold text-brand-700">
-            <span>✅</span> {t('report.locationFound')}: {location.label || `${location.village || ''} ${location.district}`}
+            <span>{location?.method === 'photo' ? '📸' : '✅'}</span>
+            {location?.method === 'photo' ? `${t('report.photoLocation')}: ` : `${t('report.locationFound')}: `}
+            {location.label || `${location.village || ''} ${location.district || ''}`.trim() || `${location.lat?.toFixed(4)}, ${location.lng?.toFixed(4)}`}
           </div>
         )}
       </div>
@@ -248,8 +251,9 @@ export default function ReportProblem() {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [result, setResult] = useState(null) // { report, offline }
-  const [similar, setSimilar] = useState(null)
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState(null) // { merged, report, into, offline }
+  const [similar, setSimilar] = useState(null) // [{ report, score }] once checked
 
   const cameraRef = useRef(null)
   const galleryRef = useRef(null)
@@ -278,25 +282,57 @@ export default function ReportProblem() {
 
   async function handleFiles(fileList) {
     const files = Array.from(fileList).slice(0, MAX_PHOTOS - photos.length)
+    let gotLocation = !!(location?.district || location?.lat)
     for (const f of files) {
       try {
+        // Read GPS out of the ORIGINAL file BEFORE compressing — the canvas
+        // re-encode in compressImage() strips all EXIF metadata.
+        if (!gotLocation) {
+          const gps = await extractPhotoLocation(f)
+          if (gps) {
+            const geo = online ? await reverseGeocode(gps.lat, gps.lng) : null
+            setLocation({
+              method: 'photo',
+              lat: gps.lat,
+              lng: gps.lng,
+              village: geo?.village || '',
+              block: geo?.block || '',
+              district: geo?.district || '',
+              state: geo?.state || 'Jharkhand',
+              label: geo?.label || `📍 ${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`,
+            })
+            gotLocation = true
+            toast(t('report.photoLocation'), { icon: '📍' })
+          }
+        }
         const dataUrl = await compressImage(f)
         setPhotos((p) => [...p, dataUrl])
       } catch { /* ignore bad file */ }
     }
   }
 
-  function checkSimilar() {
-    // Lightweight dedup: same category + same district already reported.
-    if (!category || !location?.district) return null
-    const existing = JSON.parse(localStorage.getItem('ss:reports') || '[]')
-    const match = existing.find(
-      (r) => r.category === category && r.location?.district === location.district && !r.pending,
-    )
-    return match || null
+  // Ask the platform (server-authoritative, local fallback) whether this problem
+  // is already being reported — so many voices merge into one challenge.
+  async function checkAndSubmit() {
+    setChecking(true)
+    const matches = await api.findSimilar({
+      category: category || ai.category,
+      title: title || suggestTitle(description),
+      description,
+      location,
+    })
+    setChecking(false)
+    if (matches && matches.length) setSimilar(matches)
+    else submit(false)
   }
 
-  async function submit() {
+  function addSupportTo(sr) {
+    api.voteReport(sr.id)
+    toast(t('toast.voteAdded'), { icon: '🙌' })
+    navigate(`/track/${sr.id}`)
+  }
+
+  async function submit(allowDuplicate = false) {
     setSubmitting(true)
     const payload = {
       category: category || ai.category,
@@ -307,27 +343,37 @@ export default function ReportProblem() {
       ai,
       reporter: anonymous ? { anonymous: true } : { anonymous: false, name, phone },
     }
-    const res = await api.createReport(payload, { online })
+    const res = await api.createReport(payload, { online, allowDuplicate })
     setSubmitting(false)
+    setSimilar(null)
     setResult(res)
   }
 
   // ── Success screen ──
   if (result) {
-    const r = result.report
+    const merged = result.merged
+    const r = merged ? result.into : result.report
+    const tone = merged ? 'bg-violet-100' : result.offline ? 'bg-amber-100' : 'bg-brand-100'
+    const icon = merged ? '🔗' : result.offline ? '📡' : '🎉'
+    const heading = merged ? t('report.mergedTitle') : result.offline ? t('report.savedOffline') : t('report.successTitle')
+    const sub = merged ? t('report.mergedSub') : result.offline ? t('report.savedOfflineSub') : t('report.successSub')
     return (
       <div className="container-app max-w-lg py-10">
         <div className="card animate-pop-in overflow-hidden p-8 text-center">
-          <div className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${result.offline ? 'bg-amber-100' : 'bg-brand-100'}`}>
-            <span className="text-4xl">{result.offline ? '📡' : '🎉'}</span>
+          <div className={`mx-auto flex h-20 w-20 items-center justify-center rounded-full ${tone}`}>
+            <span className="text-4xl">{icon}</span>
           </div>
-          <h2 className="mt-4 text-2xl font-extrabold text-ink-900">
-            {result.offline ? t('report.savedOffline') : t('report.successTitle')}
-          </h2>
-          <p className="mt-1 text-ink-500">{result.offline ? t('report.savedOfflineSub') : t('report.successSub')}</p>
+          <h2 className="mt-4 text-2xl font-extrabold text-ink-900">{heading}</h2>
+          <p className="mt-1 text-ink-500">{sub}</p>
+
+          {merged && (
+            <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-sm font-semibold text-violet-700">
+              🙌 {t('report.mergedVotes', { count: r.votes || 0 })}
+            </div>
+          )}
 
           <div className="mt-6 rounded-2xl border-2 border-dashed border-brand-300 bg-brand-50 p-4">
-            <p className="text-sm font-semibold text-brand-700">{t('report.yourId')}</p>
+            <p className="text-sm font-semibold text-brand-700">{merged ? t('report.mergedIntoId') : t('report.yourId')}</p>
             <p className="mt-1 font-mono text-3xl font-extrabold tracking-wider text-brand-800">{r.id}</p>
             <button
               onClick={() => { navigator.clipboard?.writeText(r.id); toast(t('report.copied')) }}
@@ -481,17 +527,31 @@ export default function ReportProblem() {
         )}
       </div>
 
-      {/* Similar-problem nudge */}
+      {/* AI similar-problem detection — merge into one challenge */}
       {similar && (
-        <div className="mt-4 card border-amber-200 bg-amber-50 p-4">
-          <p className="font-bold text-amber-900">⚠️ {t('report.similarFound')}</p>
-          <p className="mt-1 text-sm text-amber-800">{t('report.similarSub')}</p>
+        <div className="mt-4 card border-violet-200 bg-violet-50 p-4">
+          <p className="font-bold text-violet-900">🤖 {t('report.similarFound')}</p>
+          <p className="mt-1 text-sm text-violet-800">{t('report.similarSub')}</p>
+          <div className="mt-3 space-y-2">
+            {similar.map(({ report: sr, score }) => (
+              <div key={sr.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-3 ring-1 ring-violet-100">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <CategoryIcon categoryKey={sr.category} />
+                    <p className="truncate font-semibold text-ink-800">{sr.title}</p>
+                  </div>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    📍 {sr.location?.district || '—'} · 🙌 {sr.votes || 0} · <span className="font-semibold text-violet-600">{t('report.matchPct', { pct: Math.round(score * 100) })}</span>
+                  </p>
+                </div>
+                <button onClick={() => addSupportTo(sr)} className="btn-accent btn-sm shrink-0">🙌 {t('report.meToo')}</button>
+              </div>
+            ))}
+          </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={() => { api.voteReport(similar.id); toast(t('toast.voteAdded'), { icon: '🙌' }); navigate(`/track/${similar.id}`) }} className="btn-accent btn-md">
-              🙌 {t('report.addSupport')}
-            </button>
-            <button onClick={() => { setSimilar(null); submit() }} className="btn-ghost btn-md">
-              {t('report.reportSeparately')}
+            <button onClick={() => setSimilar(null)} className="btn-ghost btn-md">← {t('common.back')}</button>
+            <button onClick={() => submit(true)} disabled={submitting} className="btn-soft btn-md">
+              {submitting ? t('report.submitting') : t('report.reportSeparately')}
             </button>
           </div>
         </div>
@@ -514,11 +574,11 @@ export default function ReportProblem() {
             </button>
           ) : (
             <button
-              onClick={() => { const m = checkSimilar(); if (m) setSimilar(m); else submit() }}
-              disabled={!canNext || submitting}
+              onClick={checkAndSubmit}
+              disabled={!canNext || submitting || checking}
               className="btn-primary btn-xl flex-1"
             >
-              {submitting ? t('report.submitting') : `✅ ${t('report.submitReport')}`}
+              {checking ? t('report.checking') : submitting ? t('report.submitting') : `✅ ${t('report.submitReport')}`}
             </button>
           )}
         </div>

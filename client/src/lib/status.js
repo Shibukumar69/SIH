@@ -23,6 +23,7 @@ export const STATUS_META = {
   resolved:      { icon: '🎉', color: 'green' },
   rejected:      { icon: '⛔', color: 'rose' },
   reopened:      { icon: '🔄', color: 'orange' },
+  merged:        { icon: '🔗', color: 'ink' },
 }
 
 export function statusIndex(status) {

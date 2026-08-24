@@ -4,11 +4,14 @@ import { Report } from './models/Report.js'
 import { buildSeedReports } from './lib/seedData.js'
 
 // Standalone seeder: `npm run seed` — wipes and re-inserts the demo challenges.
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/samadhansetu'
+const MONGODB_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/samadhansetu'
 
 async function run() {
   await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
   const docs = buildSeedReports(Date.now())
+  // DESTRUCTIVE: wipes ALL reports first. On a shared Atlas cluster this deletes
+  // every teammate's data too — only run when you intend a full reset.
+  console.log(`⚠  Wiping and reseeding ${MONGODB_URI.replace(/:[^:@/]+@/, ':****@')}`)
   await Report.deleteMany({})
   await Report.insertMany(docs)
   console.log(`✓ Reseeded ${docs.length} demo challenges into ${MONGODB_URI}`)

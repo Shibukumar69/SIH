@@ -32,7 +32,17 @@
       "Bash(findstr :4000)",
       "Bash(tasklist //FI \"PID eq 17548\")",
       "Bash(taskkill //PID 17548 //F)",
-      "Bash(findstr LISTENING)"
+      "Bash(findstr LISTENING)",
+      "Bash(node D:/SIH/server/src/seed.js)",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=34108' | Select-Object ProcessId,ParentProcessId,CommandLine | Format-List\")",
+      "Bash(grep -v '^$')",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=11212' | Select-Object ProcessId,Name,CommandLine | Format-List\")",
+      "Bash(tasklist //FI \"PID eq 11212\")",
+      "Bash(powershell -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'ProcessId=11212 OR ProcessId=34108' | Select-Object ProcessId,CreationDate | Format-List\")",
+      "Bash(taskkill //F //T //PID 11212)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(git check-ignore *)",
+      "Bash(node --input-type=module -e ' *)"
     ]
   }
 }

@@ -14,7 +14,7 @@ export async function connectDB(uri) {
   } catch (err) {
     console.warn('⚠  MongoDB not connected:', err.message)
     console.warn('   The API will run but return 503 for data routes.')
-    console.warn('   Set MONGODB_URI in server/.env (local mongod or an Atlas URL).')
+    console.warn('   Set MONGO_URI in server/.env (local mongod or an Atlas URL).')
     return false
   }
 }

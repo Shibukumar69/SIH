@@ -1,6 +1,7 @@
 // Filtering + sorting, identical semantics to the client's api.applyQuery.
 export function applyQuery(reports, { category, district, status, sort } = {}) {
-  let out = [...reports]
+  // Merged duplicates are tombstones — never surface them in any listing.
+  let out = reports.filter((r) => r.status !== 'merged')
   if (category && category !== 'all') out = out.filter((r) => r.category === category)
   if (district && district !== 'all') out = out.filter((r) => r.location?.district === district)
   if (status && status !== 'all') out = out.filter((r) => r.status === status)
@@ -11,9 +12,10 @@ export function applyQuery(reports, { category, district, status, sort } = {}) {
 
 // Aggregate stats — mirrors client computeStats.
 export function computeStats(reports) {
+  const visible = reports.filter((r) => r.status !== 'merged')
   const byStatus = {}, byCategory = {}, byDistrict = {}
   let totalVotes = 0
-  for (const r of reports) {
+  for (const r of visible) {
     byStatus[r.status] = (byStatus[r.status] || 0) + 1
     byCategory[r.category] = (byCategory[r.category] || 0) + 1
     const d = r.location?.district || 'Unknown'
@@ -21,10 +23,10 @@ export function computeStats(reports) {
     totalVotes += r.votes || 0
   }
   const resolved = byStatus.resolved || 0
-  const total = reports.length
+  const total = visible.length
   const collaboration = (byStatus.collaboration || 0) + (byStatus.solution || 0) + (byStatus.pilot || 0)
   const pending = byStatus.submitted || 0
-  const highPriority = reports.filter((r) => r.priority === 'high' || r.priority === 'critical').length
+  const highPriority = visible.filter((r) => r.priority === 'high' || r.priority === 'critical').length
   const solutions = (byStatus.solution || 0) + (byStatus.pilot || 0) + resolved
   return {
     total, pending, highPriority, collaboration, solutions, resolved, totalVotes,

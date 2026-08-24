@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useLang } from '../context/LanguageContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { api } from '../lib/api.js'
+import { usePolling } from '../lib/usePolling.js'
 import StatusTimeline from '../components/StatusTimeline.jsx'
 import VoteButton from '../components/VoteButton.jsx'
 import { CategoryPill } from '../components/CategoryBadge.jsx'
@@ -21,8 +22,15 @@ export default function ReportDetail() {
     api.getReport(id).then((r) => (r ? setReport(r) : setNotFound(true)))
   }, [id])
 
+  // Live: reflect status changes made by government / university / industry.
+  usePolling(() => {
+    api.getReport(id).then((r) => {
+      if (r) setReport((prev) => ({ ...r, votedByMe: r.votedByMe || prev?.votedByMe }))
+    })
+  }, 8000)
+
   async function reopen() {
-    const updated = await api.updateReport(id, { status: 'gov_review', priority: 'high', note: 'Reopened by citizen — not satisfied with resolution' })
+    const updated = await api.reopenReport(id, 'Reopened by citizen — not satisfied with resolution')
     setReport({ ...updated, votedByMe: report.votedByMe })
     toast(t('status.reopened'), { icon: '🔄' })
   }

@@ -22,15 +22,26 @@ export function AuthProvider({ children }) {
   })
 
   const login = useCallback(async (role, credentials) => {
-    // Try the real backend; fall back to a local demo session if unavailable.
-    let session = await api.login(role, credentials).catch(() => null)
-    if (!session) {
-      const base = DEMO_ACCOUNTS[role] || { name: role, org: '' }
-      session = { role, ...base, token: `demo-${role}`, demo: true }
+    const persist = (session) => {
+      setUser(session)
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(session)) } catch { /* ignore */ }
+      return session
     }
-    setUser(session)
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(session)) } catch { /* ignore */ }
-    return session
+    try {
+      // Real backend session (signed JWT).
+      return persist(await api.login(role, credentials))
+    } catch (err) {
+      // Server reachable but rejected the credentials → surface a real error,
+      // never a silent demo bypass.
+      if (api.isServerAvailable() && err?.status === 401) {
+        const e = new Error('invalid_credentials')
+        e.code = 'invalid_credentials'
+        throw e
+      }
+      // Truly offline → local demo session so the app stays demoable.
+      const base = DEMO_ACCOUNTS[role] || { name: role, org: '' }
+      return persist({ role, ...base, token: `demo-${role}`, demo: true })
+    }
   }, [])
 
   const logout = useCallback(() => {

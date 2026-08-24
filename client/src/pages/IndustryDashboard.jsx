@@ -4,9 +4,11 @@ import { useLang } from '../context/LanguageContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { api } from '../lib/api.js'
+import { usePolling } from '../lib/usePolling.js'
 import StatCard from '../components/StatCard.jsx'
 import { CategoryIcon } from '../components/CategoryBadge.jsx'
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx'
+import LiveChip from '../components/LiveChip.jsx'
 import { statusProgress } from '../lib/status.js'
 
 // What this industry partner can bring to each kind of challenge.
@@ -35,6 +37,7 @@ export default function IndustryDashboard() {
   const orgName = user?.name || 'Tata Steel Foundation'
   function refresh() { api.listReports({ sort: 'top' }).then(setReports) }
   useEffect(() => { refresh() }, [])
+  usePolling(refresh, 7000) // live: gov verifies + university joins in real time
 
   const opportunities = useMemo(() =>
     reports.filter((r) => ['matching', 'collaboration', 'solution'].includes(r.status) && r.assignedIndustry !== orgName),
@@ -70,6 +73,7 @@ export default function IndustryDashboard() {
       </div>
 
       <div className="container-app py-6">
+        <div className="mb-3 flex justify-end"><LiveChip /></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatCard icon="🎯" accent="amber" value={opportunities.length} label={t('industry.opportunities')} onClick={() => setTab('opportunities')} />
           <StatCard icon="🤝" accent="violet" value={active.length} label={t('industry.activeCollaborations')} onClick={() => setTab('active')} />

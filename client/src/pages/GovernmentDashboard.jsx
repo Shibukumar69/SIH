@@ -3,10 +3,12 @@ import { useLang } from '../context/LanguageContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { api } from '../lib/api.js'
+import { usePolling } from '../lib/usePolling.js'
 import StatCard from '../components/StatCard.jsx'
 import { CategoryIcon } from '../components/CategoryBadge.jsx'
 import { StatusBadge, PriorityBadge } from '../components/StatusBadge.jsx'
 import JharkhandMap from '../components/JharkhandMap.jsx'
+import LiveChip from '../components/LiveChip.jsx'
 import { BarList, StatusFunnel, TrendArea, categoryChartData } from '../components/Charts.jsx'
 
 function DashHeader({ user, title, subtitle }) {
@@ -51,8 +53,9 @@ export default function GovernmentDashboard() {
     api.stats().then(setStats)
   }
   useEffect(() => { refresh() }, [])
+  usePolling(refresh, 7000) // live: new citizen reports + partner updates
 
-  const pending = useMemo(() => reports.filter((r) => r.status === 'submitted'), [reports])
+  const pending = useMemo(() => reports.filter((r) => r.status === 'submitted' || r.status === 'reopened'), [reports])
   const catData = useMemo(() => (stats ? categoryChartData(stats.byCategory, lang) : []), [stats, lang])
   const districtData = useMemo(() => {
     if (!stats) return []
@@ -77,6 +80,7 @@ export default function GovernmentDashboard() {
       <DashHeader user={user} title={t('gov.title')} subtitle={t('gov.subtitle')} />
 
       <div className="container-app py-6">
+        <div className="mb-3 flex justify-end"><LiveChip /></div>
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatCard icon="📥" accent="indigo" value={stats?.total ?? '—'} label={t('gov.totalChallenges')} onClick={() => setTab('verify')} />

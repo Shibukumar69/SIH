@@ -135,6 +135,14 @@ export default {
     similarSub: 'Instead of a duplicate, you can add your support to it.',
     addSupport: "I'm facing this too",
     reportSeparately: 'Report separately anyway',
+    photoLocation: 'Location detected from photo',
+    matchPct: '{pct}% match',
+    meToo: 'Me too',
+    checking: 'Checking for similar reports…',
+    mergedTitle: 'Added to an existing challenge!',
+    mergedSub: 'This problem is already being tracked. We added your voice to it so it gets solved faster.',
+    mergedIntoId: 'Challenge ID',
+    mergedVotes: '{count} citizens are backing this now',
   },
 
   track: {
@@ -224,6 +232,8 @@ export default {
     demoNote: 'Demo access — pick a role and continue',
     continueAs: 'Continue as {role}',
     invalid: 'Invalid credentials. Try the demo accounts below.',
+    invalidCreds: 'Wrong email or password. Try the demo account shown below.',
+    loginFailed: 'Could not sign in. Please try again.',
   },
 
   gov: {
@@ -296,6 +306,10 @@ export default {
     offerToast: 'Your offer has been shared with the project team',
     activeCollaborations: 'Active Collaborations',
     csrTitle: 'CSR & Impact',
+  },
+
+  live: {
+    updating: 'Live',
   },
 
   network: {

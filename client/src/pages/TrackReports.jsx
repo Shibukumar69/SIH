@@ -2,15 +2,23 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useLang } from '../context/LanguageContext.jsx'
 import { api } from '../lib/api.js'
+import { usePolling } from '../lib/usePolling.js'
 import ReportCard from '../components/ReportCard.jsx'
 
 export default function TrackReports() {
   const { t } = useLang()
   const [reports, setReports] = useState(null)
 
-  useEffect(() => {
-    api.getMyReports().then(setReports)
-  }, [])
+  // Refresh each tracked report from the server (falling back to local), so
+  // status changes by officials appear live — without wiping unsynced reports.
+  async function refresh() {
+    const mine = await api.getMyReports()
+    const fresh = await Promise.all(mine.map((r) => api.getReport(r.id).then((x) => x || r)))
+    setReports(fresh)
+  }
+
+  useEffect(() => { refresh() }, [])
+  usePolling(refresh, 8000)
 
   return (
     <div className="container-app max-w-3xl py-6">

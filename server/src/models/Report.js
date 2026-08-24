@@ -41,6 +41,9 @@ const ReportSchema = new mongoose.Schema(
     timeline: [TimelineEntry],
     pending: { type: Boolean, default: false },
     seeded: { type: Boolean, default: false },
+    // When set, this report was detected as a duplicate and folded into another
+    // (canonical) challenge. Merged reports are hidden from lists and stats.
+    mergedInto: { type: String, default: null },
     // Stored as ISO strings to stay identical with the offline client store.
     createdAt: String,
     updatedAt: String,

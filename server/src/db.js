@@ -3,24 +3,50 @@ import { Report } from './models/Report.js'
 import { buildSeedReports } from './lib/seedData.js'
 import { seedDemoUsers } from './controllers/authController.js'
 
-// Connect to MongoDB. Never throws — returns true on success, false otherwise,
-// so the API can still boot and report db:false via /api/health.
+let cachedPromise = null
+let lastDbError = null
+const DEFAULT_MONGO_URI = 'mongodb+srv://SIH26043:SIH26043@sih26043.almbgn9.mongodb.net/jansamadhan_db?retryWrites=true&w=majority'
+
+// Connect to MongoDB. Never throws — returns true on success, false otherwise.
+// Caches connection promise for Vercel serverless lambda reuse.
 export async function connectDB(uri) {
   if (mongoose.connection.readyState === 1) {
+    lastDbError = null
     return true
   }
+  if (cachedPromise) {
+    try {
+      await cachedPromise
+      if (mongoose.connection.readyState === 1) {
+        lastDbError = null
+        return true
+      }
+    } catch (err) {
+      cachedPromise = null
+      lastDbError = err.message
+    }
+  }
+  const connectionUri = uri || process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_MONGO_URI
   try {
     mongoose.set('strictQuery', true)
-    await mongoose.connect(uri, { serverSelectionTimeoutMS: 4000 })
+    cachedPromise = mongoose.connect(connectionUri, {
+      serverSelectionTimeoutMS: 10000,
+    })
+    await cachedPromise
     console.log('✓ MongoDB connected')
-    await seedIfEmpty()
+    lastDbError = null
+    await seedIfEmpty().catch(() => {})
     return true
   } catch (err) {
+    cachedPromise = null
+    lastDbError = err.message
     console.warn('⚠  MongoDB not connected:', err.message)
-    console.warn('   The API will run but return 503 for data routes.')
-    console.warn('   Set MONGO_URI in server/.env (local mongod or an Atlas URL).')
     return false
   }
+}
+
+export function getDbError() {
+  return lastDbError
 }
 
 // Populate demo data on first run so every dashboard looks alive.

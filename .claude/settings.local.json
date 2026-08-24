@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm -v)",
+      "Bash(echo \"npm: $\\(npm -v 2>/dev/null || echo MISSING\\)\")",
+      "Bash(git --version)",
+      "Bash(echo \"git: $\\(git --version 2>/dev/null || echo MISSING\\)\")",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(timeout 8 node src/index.js)",
+      "Bash(curl -s http://localhost:4000/api/health)",
+      "Bash(curl -s http://localhost:4000/api/reports)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const a=JSON.parse\\(d\\);console.log\\('count:',a.length\\);console.log\\('first:',a[0].id,'|',a[0].title,'|',a[0].status,'|votes',a[0].votes\\)}\\)\")",
+      "Bash(curl -s http://localhost:4000/api/stats)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const s=JSON.parse\\(d\\);console.log\\('total',s.total,'pending',s.pending,'highPri',s.highPriority,'collab',s.collaboration,'resolved',s.resolved,'rate',s.resolutionRate+'%'\\)}\\)\")",
+      "Bash(curl -s -X POST http://localhost:4000/api/reports/SS-20322/vote)",
+      "Bash(curl -s -X PATCH http://localhost:4000/api/reports/SS-20322 -H \"Content-Type: application/json\" -d '{\"status\":\"verified\",\"priority\":\"high\",\"note\":\"Verified in test\"}')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);console.log\\('status:',r.status,'priority:',r.priority,'timeline len:',r.timeline.length,'last note:',r.timeline.at\\(-1\\).note\\)}\\)\")",
+      "Bash(curl -s -X POST http://localhost:4000/api/reports -H \"Content-Type: application/json\" -d '{\"id\":\"SS-TEST1\",\"category\":\"water\",\"title\":\"Test report\",\"description\":\"hello\",\"location\":{\"district\":\"Ranchi\"},\"status\":\"submitted\",\"priority\":\"medium\",\"votes\":1}' -o /dev/null -w \"http %{http_code}\\\\n\")",
+      "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H \"Content-Type: application/json\" -d '{\"role\":\"government\"}')",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const r=JSON.parse\\(d\\);console.log\\('role:',r.role,'name:',r.name,'token?',!!r.token\\)}\\)\")",
+      "Bash(curl -s -X PATCH http://localhost:4000/api/reports/SS-20322 -H \"Content-Type: application/json\" -d '{\"status\":\"submitted\",\"priority\":\"medium\"}' -o /dev/null -w \"reverted %{http_code}\\\\n\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const a=JSON.parse\\(d\\);console.log\\('count:',a.length,'| has test?',a.some\\(r=>r.id==='SS-TEST1'\\)\\)}\\)\")",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -o /dev/null -w \"http %{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s -o /dev/null -w \"health: %{http_code}\\\\n\" http://localhost:4000/api/health)",
+      "Bash(curl -s -o /dev/null -w \"app: %{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const s=JSON.parse\\(d\\);console.log\\('challenges:',s.total,'| pending:',s.pending,'| resolved:',s.resolved\\)}\\)\")",
+      "Bash(ls -la \"C:/Users/shibu/.claude/projects/D--SIH/memory/\" 2>/dev/null && echo \"---\" && cat \"C:/Users/shibu/.claude/projects/D--SIH/memory/MEMORY.md\" 2>/dev/null || echo \"no memory dir/index yet\")",
+      "Bash(netstat -ano)",
+      "Bash(findstr :4000)",
+      "Bash(tasklist //FI \"PID eq 17548\")",
+      "Bash(taskkill //PID 17548 //F)",
+      "Bash(findstr LISTENING)"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "SamadhanSetu · समाधान सेतु",
+  "short_name": "SamadhanSetu",
+  "description": "Crowdsource local challenges and solve them together — citizens, government, universities and industry.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#059669",
+  "lang": "hi-IN",
+  "categories": ["government", "education", "social"],
+  "icons": [
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

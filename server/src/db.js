@@ -5,6 +5,9 @@ import { buildSeedReports } from './lib/seedData.js'
 // Connect to MongoDB. Never throws — returns true on success, false otherwise,
 // so the API can still boot and report db:false via /api/health.
 export async function connectDB(uri) {
+  if (mongoose.connection.readyState === 1) {
+    return true
+  }
   try {
     mongoose.set('strictQuery', true)
     await mongoose.connect(uri, { serverSelectionTimeoutMS: 4000 })
